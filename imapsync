@@ -1339,6 +1339,7 @@ my(
         $uid1, $uid2,
         $split1, $split2,
         $modulesversion,
+        @createmissingfolders1,
         $delete2folders, $delete2foldersonly, $delete2foldersbutnot,
         $debugcache, $cacheaftercopy,
         $wholeheaderifneeded, %h1_msgs_copy_by_uid, $useuid, $h2_uidguess,
@@ -2308,6 +2309,8 @@ if ( $subscribed ) {
 if ( @h2_folders_not_in_1 ) {
         myprint( "Folders in host2 not in host1:\n",
         jux_utf8_list( @h2_folders_not_in_1 ), "\n" ) ;
+        
+        create_missing_folders_in_1( $sync );
 }
 
 
@@ -9447,6 +9450,61 @@ sub count_from_select
         return( undef ) ;
 }
 
+
+sub create_missing_folders_in_1
+{
+	if ( not scalar  @createmissingfolders1  ) {
+		myprint( "Not creating missing folders; Use option --createmissingfolders1 to create missing folders on host1\n\n"  ) ;
+		return;
+	}
+	
+	my @selected_folders = grep { /@createmissingfolders1/ } @h2_folders_not_in_1 ;
+	@selected_folders = sort { lc($a) cmp lc($b) } @selected_folders;
+	
+	if ( scalar @selected_folders == 0 ) {
+		myprint( "Not creating missing folders; Regex input for --createmissingfolders1 did not match any missing folder on host1\n\n"  ) ;
+		return;
+	}
+	
+	myprint("Creating missing folders on host1 : @selected_folders\n");
+	
+	my $mysync = shift ;
+	my $imap = $mysync->{ 'imap1' } || return ;
+	
+	FOLDER:
+	foreach my $h1_fold ( @selected_folders ) {	
+
+        myprint( "Creating missing folder [$h1_fold] on host1\n" ) ;
+        if ( ( 'INBOX' eq uc  $h1_fold )
+         and ( $imap->exists( $h1_fold ) ) ) {
+                myprint( "Folder [$h1_fold] already exists\n"  ) ;
+                next FOLDER;
+        }
+        if ( ! $mysync->{dry} ){
+                if ( ! $imap->create( $h1_fold ) ) {
+                        my $error = join q{},
+                                "Could not create folder [$h1_fold]: ",
+                                $imap->LastError(  ), "\n" ;
+                        errors_incr( $mysync, $error ) ;
+                        # success if folder exists ("already exists" error)
+                        next FOLDER if $imap->exists( $h1_fold ) ;
+                        # failure since create failed
+                        next FOLDER;
+                }else{
+                        #create succeeded
+                        myprint( "Created missing folder [$h1_fold] on host1\n"  ) ;
+                        next FOLDER;
+                }
+        }else{
+                # dry mode, no folder so many imap will fail, assuming failure
+                myprint( "Created missing folder [$h1_fold] on host1 $mysync->{dry_message}\n"  ) ;
+                next FOLDER;
+        }
+	}
+	
+	myprint("Completed creating missing folders on host1\n\n");
+	return;
+}
 
 
 sub create_folder_old
@@ -20581,6 +20639,7 @@ sub get_options_cmd
         'resyncflags!'        => \$mysync->{ resyncflags },
         'synclabels!'         => \$mysync->{ synclabels },
         'resynclabels!'       => \$mysync->{ resynclabels },
+        'createmissingfolders1=s'       => \@createmissingfolders1,
         'delete|delete1!'     => \$mysync->{ delete1 },
         'delete2!'            => \$mysync->{ delete2 },
         'delete2duplicates!'  => \$mysync->{ delete2duplicates },
